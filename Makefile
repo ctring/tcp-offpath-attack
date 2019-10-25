@@ -5,8 +5,8 @@ LDFLAGS := -lpthread -ltins -lpcap
 .PHONY: all
 all: main
 
-main: main.o packet_counter.o common.o
-	$(CXX) $(CXXFLAGS) -o main common.o packet_counter.o main.o $(LDFLAGS)
+main: main.o packet_counter.o common.o port_finder.o
+	$(CXX) $(CXXFLAGS) -o main common.o packet_counter.o port_finder.o main.o $(LDFLAGS)
 
 main.o: main.cpp common.h
 	$(CXX) $(CXXFLAGS) -c main.cpp
@@ -16,6 +16,9 @@ packet_counter.o: packet_counter.cpp
 
 common.o: common.cpp
 	$(CXX) $(CXXFLAGS) -c common.cpp
+
+port_finder.o: port_finder.cpp
+	$(CXX) $(CXXFLAGS) -c port_finder.cpp
 
 .PHONY: clean
 clean:

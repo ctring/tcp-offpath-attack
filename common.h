@@ -36,7 +36,10 @@ struct ConnectionID{
 
 bool has_packet(Tins::Sniffer& sniffer, time_t timeout_s);
 Tins::IP make_packet(
-        ConnectionID connection, std::string flags, uint32_t seq, std::string raw);
+        ConnectionID connection, 
+        std::string flags, 
+        uint32_t seq, 
+        std::string raw="X");
 
 using namespace std::chrono;
 

