@@ -22,7 +22,7 @@ void PortFinder::setSyncDelayMs(chrono::milliseconds syncDelayMs) {
 }
 
 uint32_t PortFinder::find(uint32_t from, uint32_t to) {
-    int range = 500;
+    int range = 4400;
     auto start = from;
     while (start <= to) {
         auto finish = min(start + range - 1, to);
@@ -65,7 +65,7 @@ bool PortFinder::has_port(uint32_t from, uint32_t to) {
     }
 
     auto pcounter = PacketCounter::instance();
-    int retry = 5;
+    int retry = 3;
     while (retry > 0) {
         pcounter->startCounting();
         align_and_delay(syncDelayMs_);
@@ -79,9 +79,8 @@ bool PortFinder::has_port(uint32_t from, uint32_t to) {
         } else if (numReceived == 100) {
             return false;
         }
-        cout << endl << "Debug: Received " << numReceived;
+        cout << endl << "Received " << numReceived << " packets. Retrying..." << endl;
         retry--;
     }
-    cout << endl;
     throw "Too much packet loss or clock is not synchronized";
 }

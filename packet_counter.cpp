@@ -23,6 +23,7 @@ PacketCounter::PacketCounter(
         const std::string& iface, const std::string& filter) {
     Tins::SnifferConfiguration config;
     config.set_filter(filter);
+    config.set_promisc_mode(false);
     config.set_pcap_sniffing_method(pcap_dispatch);
     sniffer_ = new Tins::Sniffer(iface, config);
     runner_ = std::thread(&PacketCounter::run, this);
@@ -38,7 +39,10 @@ void PacketCounter::run() {
     sniffer_->sniff_loop(
         [this](const Tins::PDU& pdu) {
             if (counting_) {
-                counter_++;
+                const auto& ip = pdu.rfind_pdu<Tins::IP>();
+                if (ip.dst_addr() != kVictimIP) {
+                    counter_++;
+                }
             }
             return true;
         }

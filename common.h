@@ -6,8 +6,9 @@
 #include <sstream>
 #include <thread>
 
-const std::string kNetworkInterface("enx5cf7e68b298b");
-const std::string kServerIP("192.168.1.100");
+const std::string kNetworkInterface("virbr0");
+const std::string kServerIP("192.168.122.3");
+const std::string kVictimIP("192.168.122.2");
 const uint32_t kServerPort = 22;
 
 struct ConnectionID{

@@ -135,10 +135,10 @@ int main() {
     cout << "Synchronization delay: " << syncDelayMs.count() << "ms" << endl;
 
     printHeader("FINDING VICTIM'S PORT...");
-    PortFinder portFinder(legitConn, legitLastSeq, "192.168.1.103");
+    PortFinder portFinder(legitConn, legitLastSeq, kVictimIP);
     portFinder.setSyncDelayMs(syncDelayMs);
     try {
-        auto victimPort = portFinder.find(32000, 38000);
+        auto victimPort = portFinder.find(32000, 65535);
         cout << "Victim's port: " << victimPort << endl;
     } catch (char const* err) {
         cout << "Error: " << err << endl;
