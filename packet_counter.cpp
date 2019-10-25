@@ -3,7 +3,21 @@
 #include <iostream>
 #include <chrono>
 
+#include "common.h"
+
+using namespace std;
 using namespace std::chrono_literals;
+
+PacketCounter* PacketCounter::instance_ = nullptr;
+
+PacketCounter* PacketCounter::instance() {
+    if (instance_ == nullptr) {
+        instance_ = new PacketCounter(
+            kNetworkInterface, 
+            "src host " + kServerIP + " and src port " + to_string(kServerPort));
+    }
+    return instance_;
+}
 
 PacketCounter::PacketCounter(
         const std::string& iface, const std::string& filter) {

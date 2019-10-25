@@ -1,7 +1,12 @@
+#pragma once
+
 #include <tins/tins.h>
 #include <iostream>
+#include <sstream>
 
-using namespace std;
+const std::string kNetworkInterface("enx5cf7e68b298b");
+const std::string kServerIP("192.168.1.100");
+const uint32_t kServerPort = 22;
 
 struct ConnectionID{
     Tins::IPv4Address clientIP;
@@ -19,22 +24,12 @@ struct ConnectionID{
 
     ConnectionID() {}
 
-    string toString() {
-        stringstream ss;
+    std::string toString() {
+        std::stringstream ss;
         ss << "(" << clientIP << ":" << clientPort << " -> " 
            << serverIP << ":" << serverPort << ")";
         return ss.str();
     }
 };
 
-bool has_packet(Tins::Sniffer& sniffer, time_t timeout_s) {
-    auto fd = pcap_get_selectable_fd(sniffer.get_pcap_handle());
-    fd_set readfds;
-    FD_ZERO(&readfds);
-    FD_SET(fd, &readfds);
-    timeval tv;
-    tv.tv_sec = timeout_s;
-    tv.tv_usec = 0;
-    auto rv = select(fd + 1, &readfds, nullptr, nullptr, &tv);
-    return rv > 0;
-}
+bool has_packet(Tins::Sniffer& sniffer, time_t timeout_s);
