@@ -5,16 +5,16 @@
 
 #include "common.h"
 
-class PortFinder {
+class Attacker {
 public:
-    PortFinder(
-            ConnectionID legitConn, 
-            uint32_t legitLastSeq, 
-            const std::string& victimIP);
+    Attacker(
+        ConnectionID legitConn, 
+        uint32_t legitLastSeq, 
+        const std::string& victimIP);
 
-    void setSyncDelayMs(std::chrono::milliseconds syncDelayMs);
+    std::chrono::milliseconds synchronizeClock();
 
-    uint32_t find(uint32_t from, uint32_t to);
+    uint32_t find_port(uint32_t from, uint32_t to);
 
 private:
 
@@ -23,6 +23,7 @@ private:
     ConnectionID legitConn_;
     uint32_t legitLastSeq_;
     std::string victimIP_;
+    uint32_t victimPort_;
     Tins::PacketSender sender_;
 
     std::chrono::milliseconds syncDelayMs_;

