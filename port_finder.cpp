@@ -22,11 +22,12 @@ void PortFinder::setSyncDelayMs(chrono::milliseconds syncDelayMs) {
 }
 
 uint32_t PortFinder::find(uint32_t from, uint32_t to) {
-    int range = 4400;
+    int range = 5000;
     auto start = from;
+    cout << "Linear search" << endl;
     while (start <= to) {
         auto finish = min(start + range - 1, to);
-        cout << "(1) Probing ports " << start << "..." << finish << ": " << flush;
+        cout << "Probing ports " << start << "..." << finish << ": " << flush;
         if (has_port(start, finish)) {
             cout << "Yes" << endl;
             from = start;
@@ -37,11 +38,12 @@ uint32_t PortFinder::find(uint32_t from, uint32_t to) {
         start = finish + 1;
     }
 
+    cout << "Binary search" << endl;
     auto left = from;
     auto right = to;
     while (left < right) {
         auto mid = (left + right + 1) / 2;
-        cout << "(2) Probing ports " << mid << "..." << right << ": " << flush;
+        cout << "Probing ports " << mid << "..." << right << ": " << flush;
         if (has_port(mid, right)) {
             cout << "Yes" << endl;
             left = mid;
@@ -71,6 +73,7 @@ bool PortFinder::has_port(uint32_t from, uint32_t to) {
         align_and_delay(syncDelayMs_);
         for (auto p : packets) {
             sender_.send(p);
+            this_thread::sleep_for(10us);
         }
         this_thread::sleep_for(2s);
         auto numReceived = pcounter->stopCounting();
